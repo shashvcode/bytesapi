@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
-@app.post("/convert-jsproxy/")
+@app.post("/convert")
 async def convert_jsproxy(file: UploadFile = File(...)):
     try:
         contents = await file.read()  # ✅ This is now a bytes object
