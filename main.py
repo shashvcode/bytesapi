@@ -8,6 +8,7 @@ import shutil
 import mimetypes
 import magic
 from datetime import datetime, timezone
+import requests
 
 app = FastAPI()
 
@@ -84,26 +85,32 @@ async def upload_image(
         raise HTTPException(status_code=500, detail=str(e))
     
 @app.post("/merge")
-async def merge_audio_video(
-    videoFile: UploadFile = File(...),
-    audioFile: UploadFile = File(...)
+async def merge_audio_video_from_url(
+    videoUrl: str = Form(...),
+    audioUrl: str = Form(...)
 ):
     try:
-        # Save uploaded files temporarily
-        temp_video_path = os.path.join(MERGE_OUTPUT_DIR, f"temp_video_{videoFile.filename}")
-        temp_audio_path = os.path.join(MERGE_OUTPUT_DIR, f"temp_audio_{audioFile.filename}")
-        
-        with open(temp_video_path, "wb") as v:
-            shutil.copyfileobj(videoFile.file, v)
+        # Download video
+        video_response = requests.get(videoUrl, stream=True)
+        if video_response.status_code != 200:
+            raise Exception("Failed to download video file from URL.")
+        temp_video_path = os.path.join(MERGE_OUTPUT_DIR, f"temp_video_{datetime.utcnow().timestamp()}.mp4")
+        with open(temp_video_path, "wb") as f:
+            shutil.copyfileobj(video_response.raw, f)
 
-        with open(temp_audio_path, "wb") as a:
-            shutil.copyfileobj(audioFile.file, a)
+        # Download audio
+        audio_response = requests.get(audioUrl, stream=True)
+        if audio_response.status_code != 200:
+            raise Exception("Failed to download audio file from URL.")
+        temp_audio_path = os.path.join(MERGE_OUTPUT_DIR, f"temp_audio_{datetime.utcnow().timestamp()}.wav")
+        with open(temp_audio_path, "wb") as f:
+            shutil.copyfileobj(audio_response.raw, f)
 
-        # Define output path
+        # Output file
         output_filename = get_timestamped_video_filename()
         output_path = os.path.join(MERGE_OUTPUT_DIR, output_filename)
 
-        # ffmpeg merge command
+        # Run ffmpeg
         command = [
             "ffmpeg", "-y",
             "-i", temp_video_path,
@@ -112,7 +119,6 @@ async def merge_audio_video(
             "-c:a", "aac",
             output_path
         ]
-
         result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
         if result.returncode != 0:
