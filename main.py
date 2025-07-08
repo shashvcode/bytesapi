@@ -117,6 +117,7 @@ async def merge_audio_video_from_url(
             "-i", temp_audio_path,
             "-c:v", "copy",
             "-c:a", "aac",
+            "-shortest",  # <-- Ensures the output is cut to the shortest stream (the video)
             output_path
         ]
         result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
