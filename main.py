@@ -132,3 +132,34 @@ async def merge_audio_video_from_url(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/video-duration")
+async def get_video_duration(videoFile: UploadFile = File(...)):
+    try:
+        # Save video to temp file
+        temp_video_path = os.path.join(MERGE_OUTPUT_DIR, f"temp_duration_{datetime.utcnow().timestamp()}.mp4")
+        with open(temp_video_path, "wb") as f:
+            shutil.copyfileobj(videoFile.file, f)
+
+        # Run ffprobe to get video duration
+        command = [
+            "ffprobe",
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            temp_video_path
+        ]
+        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if result.returncode != 0:
+            raise Exception(result.stderr.decode())
+
+        # Parse and return duration in seconds
+        duration_seconds = float(result.stdout.decode().strip())
+
+        # Cleanup temp file
+        os.remove(temp_video_path)
+
+        return JSONResponse({"duration_seconds": duration_seconds})
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
