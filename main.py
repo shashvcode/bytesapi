@@ -48,7 +48,7 @@ def get_timestamped_filename(prefix: str, ext: str):
 
 def upload_to_supabase(file_path: str, file_name: str) -> str:
     with open(file_path, "rb") as f:
-        supabase.storage.from_(SUPABASE_BUCKET).upload(file_name, f, upsert=True)
+        supabase.storage.from_(SUPABASE_BUCKET).upload(file_name, f, file_options={"upsert": True})
     public_url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(file_name)
     return public_url
 
