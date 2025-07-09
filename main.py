@@ -12,6 +12,7 @@ import requests
 
 app = FastAPI()
 
+print("Starting server...")
 
 UPLOAD_DIR = "public_images"
 DEFAULT_EXTENSION = "png"
