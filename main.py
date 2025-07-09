@@ -167,3 +167,18 @@ async def get_video_duration_from_url(videoUrl: str = Form(...)):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/get-video-url")
+async def get_video_url(fileName: str):
+    try:
+        video_path = os.path.join(MERGE_OUTPUT_DIR, fileName)
+
+        if not os.path.isfile(video_path):
+            raise HTTPException(status_code=404, detail="Video file not found.")
+
+        return JSONResponse({
+            "videoUrl": f"/videos/{fileName}"
+        })
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
