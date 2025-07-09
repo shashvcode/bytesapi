@@ -54,7 +54,7 @@ def upload_to_supabase(file_path: str, file_name: str) -> str:
             file_name,
             f,
             file_options={
-                "upsert": True,
+                "upsert": "true",
                 "content-type": content_type
             }
         )
