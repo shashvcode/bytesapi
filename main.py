@@ -47,8 +47,17 @@ def get_timestamped_filename(prefix: str, ext: str):
     return f"{prefix}_{timestamp}.{ext}"
 
 def upload_to_supabase(file_path: str, file_name: str) -> str:
+    mime = magic.Magic(mime=True)
+    content_type = mime.from_file(file_path) or "application/octet-stream"
     with open(file_path, "rb") as f:
-        supabase.storage.from_(SUPABASE_BUCKET).upload(file_name, f, file_options={"upsert": "true"})
+        supabase.storage.from_(SUPABASE_BUCKET).upload(
+            file_name,
+            f,
+            file_options={
+                "upsert": True,
+                "content-type": content_type
+            }
+        )
     public_url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(file_name)
     return public_url
 
