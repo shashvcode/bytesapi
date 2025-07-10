@@ -125,6 +125,77 @@ async def upload_image(
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
 
+def get_audio_extension(file_path: str):
+    try:
+        mime = magic.Magic(mime=True)
+        mime_type = mime.from_file(file_path)
+    except:
+        mime_type, _ = mimetypes.guess_type(file_path)
+    
+    ext = {
+        "audio/mpeg": "mp3",
+        "audio/mp3": "mp3",
+        "audio/wav": "wav",
+        "audio/wave": "wav",
+        "audio/x-wav": "wav",
+        "audio/aac": "aac",
+        "audio/ogg": "ogg",
+        "audio/flac": "flac",
+        "audio/m4a": "m4a",
+        "audio/mp4": "m4a",
+        "audio/webm": "webm"
+    }.get(mime_type, "mp3")  # Default to mp3 for audio files
+    return ext
+
+@app.post("/upload-audio")
+async def upload_audio(
+    audioFile: UploadFile = File(...),
+    fileName: Optional[str] = Form(None)
+):
+    temp_path = None
+    try:
+        # Create temp file with proper extension
+        temp_path = os.path.join(TEMP_DIR, f"temp_audio_{datetime.now(timezone.utc).timestamp()}")
+        
+        # Save uploaded file to temp location
+        with open(temp_path, "wb") as buffer:
+            # Read the entire file content
+            file_content = await audioFile.read()
+            buffer.write(file_content)
+        
+        # Verify file was written and has content
+        if not os.path.exists(temp_path) or os.path.getsize(temp_path) == 0:
+            raise Exception("Failed to save uploaded file or file is empty")
+        
+        # Get file extension - updated for audio files
+        ext = get_audio_extension(temp_path)
+        
+        # Generate filename
+        if fileName:
+            # If user provided filename, ensure it has correct extension
+            if not fileName.endswith(f".{ext}"):
+                fileName = f"{fileName}.{ext}"
+            final_name = fileName
+        else:
+            final_name = get_timestamped_filename("audio", ext)
+        
+        # Upload to Supabase
+        public_url = upload_to_supabase(temp_path, final_name)
+        
+        return JSONResponse({
+            "audioUrl": public_url,
+            "fileName": final_name,
+            "fileSize": os.path.getsize(temp_path),
+            "contentType": magic.Magic(mime=True).from_file(temp_path)
+        })
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        # Clean up temp file
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
+
 @app.post("/merge")
 async def merge_audio_video_from_url(
     videoUrl: str = Form(...),
