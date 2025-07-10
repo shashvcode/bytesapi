@@ -196,6 +196,17 @@ async def upload_audio(
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
 
+def video_has_audio(file_path: str) -> bool:
+    command = [
+        "ffprobe", "-v", "error",
+        "-select_streams", "a",
+        "-show_entries", "stream=codec_type",
+        "-of", "csv=p=0",
+        file_path
+    ]
+    result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return "audio" in result.stdout.decode().strip().lower()
+
 @app.post("/merge")
 async def merge_audio_video_from_url(
     videoUrl: str = Form(...),
@@ -229,18 +240,33 @@ async def merge_audio_video_from_url(
         output_path = os.path.join(TEMP_DIR, output_filename)
 
         # Run ffmpeg
-        command = [
-            "ffmpeg", "-y",
-            "-i", temp_video_path,
-            "-i", temp_audio_path,
-            "-filter_complex", "[1:a]volume=0.6[a1];[0:a][a1]amix=inputs=2:duration=first:dropout_transition=2[aout]",
-            "-map", "0:v",
-            "-map", "[aout]",
-            "-c:v", "copy",
-            "-c:a", "aac",
-            "-shortest",
-            output_path
-        ]
+        if video_has_audio(temp_video_path):
+            # Mix existing voiceover + new music
+            command = [
+                "ffmpeg", "-y",
+                "-i", temp_video_path,
+                "-i", temp_audio_path,
+                "-filter_complex", "[1:a]volume=0.6[a1];[0:a][a1]amix=inputs=2:duration=first:dropout_transition=2[aout]",
+                "-map", "0:v",
+                "-map", "[aout]",
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-shortest",
+                output_path
+            ]
+        else:
+            # Just add background music as audio track
+            command = [
+                "ffmpeg", "-y",
+                "-i", temp_video_path,
+                "-i", temp_audio_path,
+                "-map", "0:v",
+                "-map", "1:a",
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-shortest",
+                output_path
+            ]
         result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
         if result.returncode != 0:
