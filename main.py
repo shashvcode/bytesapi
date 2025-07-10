@@ -246,7 +246,7 @@ async def merge_audio_video_from_url(
                 "ffmpeg", "-y",
                 "-i", temp_video_path,
                 "-i", temp_audio_path,
-                "-filter_complex", "[1:a]volume=0.6[a1];[0:a][a1]amix=inputs=2:duration=first:dropout_transition=2[aout]",
+                "-filter_complex", "[1:a]volume=0.5[a1];[0:a][a1]amix=inputs=2:duration=first:dropout_transition=2[aout]",
                 "-map", "0:v",
                 "-map", "[aout]",
                 "-c:v", "copy",
@@ -267,6 +267,7 @@ async def merge_audio_video_from_url(
                 "-shortest",
                 output_path
             ]
+            
         result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
         if result.returncode != 0:
