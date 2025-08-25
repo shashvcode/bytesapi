@@ -16,8 +16,8 @@ load_dotenv()
 print("Starting server...")
 
 # Supabase Config
-SUPABASE_URL = os.getenv("SUPABASE_PAUL_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_PAUL_KEY")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 SUPABASE_BUCKET = "paulbucket"
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
