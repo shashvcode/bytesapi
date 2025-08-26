@@ -1,6 +1,7 @@
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.responses import JSONResponse
 from typing import Optional
+from pydantic import BaseModel
 import subprocess
 import os
 import shutil
@@ -26,6 +27,12 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 DEFAULT_EXTENSION = "png"
 TEMP_DIR = "temp_files"
 os.makedirs(TEMP_DIR, exist_ok=True)
+
+# Pydantic models for request bodies
+class OverlayLogoRequest(BaseModel):
+    base_image_url: str
+    logo_image_url: str
+    corner: str = "bottom-right"  # choices: "top-left", "top-right", "bottom-left", "bottom-right"
 
 def get_extension(file_path: str):
     try:
@@ -351,20 +358,35 @@ async def test_file_info(filename: str):
 
 @app.post("/overlay-logo-url")
 async def overlay_logo_url(
-    base_image_url: str = Form(...),
-    logo_image_url: str = Form(...),
-    corner: str = Form("bottom-right")   # choices: "top-left", "top-right", "bottom-left", "bottom-right"
+    request: OverlayLogoRequest = None,
+    base_image_url: str = Form(None),
+    logo_image_url: str = Form(None),
+    corner: str = Form("bottom-right")
 ):
     temp_base_path = temp_logo_path = temp_output_path = None
     try:
+        # Handle both JSON and form data
+        if request is not None:
+            # JSON request body
+            actual_base_url = request.base_image_url
+            actual_logo_url = request.logo_image_url
+            actual_corner = request.corner
+        else:
+            # Form data
+            if not base_image_url or not logo_image_url:
+                raise HTTPException(status_code=400, detail="base_image_url and logo_image_url are required")
+            actual_base_url = base_image_url
+            actual_logo_url = logo_image_url
+            actual_corner = corner
+        
         # Download base image
-        resp = requests.get(base_image_url, timeout=10)
+        resp = requests.get(actual_base_url, timeout=10)
         if resp.status_code != 200:
             raise HTTPException(status_code=400, detail="Failed to fetch base image")
         base_img = Image.open(BytesIO(resp.content)).convert("RGBA")
 
         # Download logo image
-        resp = requests.get(logo_image_url, timeout=10)
+        resp = requests.get(actual_logo_url, timeout=10)
         if resp.status_code != 200:
             raise HTTPException(status_code=400, detail="Failed to fetch logo image")
         logo = Image.open(BytesIO(resp.content)).convert("RGBA")
@@ -374,15 +396,15 @@ async def overlay_logo_url(
         ratio = 0.15
         nw = int(bw * ratio)
         nh = int(logo.size[1] * (nw / logo.size[0]))
-        logo = logo.resize((nw, nh), Image.ANTIALIAS)
+        logo = logo.resize((nw, nh), Image.LANCZOS)
 
         # Determine position
         margin = 10
-        if corner == "top-left":
+        if actual_corner == "top-left":
             pos = (margin, margin)
-        elif corner == "top-right":
+        elif actual_corner == "top-right":
             pos = (bw - nw - margin, margin)
-        elif corner == "bottom-left":
+        elif actual_corner == "bottom-left":
             pos = (margin, bh - nh - margin)
         else:  # "bottom-right"
             pos = (bw - nw - margin, bh - nh - margin)
