@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 import requests
 from supabase import create_client, Client
 from dotenv import load_dotenv
+from PIL import Image
+from io import BytesIO
 
 app = FastAPI()
 load_dotenv()
@@ -345,3 +347,64 @@ async def test_file_info(filename: str):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+
+@app.post("/overlay-logo-url")
+async def overlay_logo_url(
+    base_image_url: str = Form(...),
+    logo_image_url: str = Form(...),
+    corner: str = Form("bottom-right")   # choices: "top-left", "top-right", "bottom-left", "bottom-right"
+):
+    temp_base_path = temp_logo_path = temp_output_path = None
+    try:
+        # Download base image
+        resp = requests.get(base_image_url, timeout=10)
+        if resp.status_code != 200:
+            raise HTTPException(status_code=400, detail="Failed to fetch base image")
+        base_img = Image.open(BytesIO(resp.content)).convert("RGBA")
+
+        # Download logo image
+        resp = requests.get(logo_image_url, timeout=10)
+        if resp.status_code != 200:
+            raise HTTPException(status_code=400, detail="Failed to fetch logo image")
+        logo = Image.open(BytesIO(resp.content)).convert("RGBA")
+
+        # Resize logo (scale to 15% width of base)
+        bw, bh = base_img.size
+        ratio = 0.15
+        nw = int(bw * ratio)
+        nh = int(logo.size[1] * (nw / logo.size[0]))
+        logo = logo.resize((nw, nh), Image.ANTIALIAS)
+
+        # Determine position
+        margin = 10
+        if corner == "top-left":
+            pos = (margin, margin)
+        elif corner == "top-right":
+            pos = (bw - nw - margin, margin)
+        elif corner == "bottom-left":
+            pos = (margin, bh - nh - margin)
+        else:  # "bottom-right"
+            pos = (bw - nw - margin, bh - nh - margin)
+
+        # Paste logo
+        base_img.paste(logo, pos, mask=logo)
+
+        # Save output to a temp file
+        output_ext = "png"
+        temp_output_path = os.path.join(TEMP_DIR, get_timestamped_filename("overlayed", output_ext))
+        base_img.save(temp_output_path, format="PNG")
+
+        # Upload to Supabase
+        final_name = os.path.basename(temp_output_path)
+        public_url = upload_to_supabase(temp_output_path, final_name)
+
+        return JSONResponse({
+            "outputUrl": public_url,
+            "fileName": final_name
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if temp_output_path and os.path.exists(temp_output_path):
+            os.remove(temp_output_path)
