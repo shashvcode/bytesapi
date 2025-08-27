@@ -393,7 +393,7 @@ async def overlay_logo_url(
 
         # Resize logo (scale to 15% width of base)
         bw, bh = base_img.size
-        ratio = 0.15
+        ratio = 0.20
         nw = int(bw * ratio)
         nh = int(logo.size[1] * (nw / logo.size[0]))
         logo = logo.resize((nw, nh), Image.LANCZOS)
