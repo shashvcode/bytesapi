@@ -13,6 +13,7 @@ from supabase import create_client, Client
 from dotenv import load_dotenv
 from PIL import Image
 from io import BytesIO
+import base64
 
 app = FastAPI()
 load_dotenv()
@@ -430,7 +431,6 @@ async def overlay_logo_url(
     finally:
         if temp_output_path and os.path.exists(temp_output_path):
             os.remove(temp_output_path)
-
 
 
 @app.post("/overlay_infographic")
