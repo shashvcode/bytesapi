@@ -13,7 +13,8 @@ from supabase import create_client, Client
 from dotenv import load_dotenv
 from PIL import Image
 from io import BytesIO
-import base64
+import cv2
+import numpy as np
 
 app = FastAPI()
 load_dotenv()
@@ -438,53 +439,57 @@ async def overlay_infographic(
     base_image_url: str = Form(...),
     overlay_image_url: str = Form(...)
 ):
-    temp_base_path = temp_overlay_path = temp_output_path = None
+    temp_output_path = None
     try:
         # Download base image
         base_resp = requests.get(base_image_url, timeout=10)
         if base_resp.status_code != 200:
             raise HTTPException(status_code=400, detail="Failed to fetch base image")
-        base_img = Image.open(BytesIO(base_resp.content)).convert("RGBA")
+        base_bytes = BytesIO(base_resp.content)
+        base_img_pil = Image.open(base_bytes).convert("RGBA")
 
         # Download overlay image
         overlay_resp = requests.get(overlay_image_url, timeout=10)
         if overlay_resp.status_code != 200:
             raise HTTPException(status_code=400, detail="Failed to fetch overlay image")
-        overlay_img = Image.open(BytesIO(overlay_resp.content)).convert("RGBA")
+        overlay_img_pil = Image.open(BytesIO(overlay_resp.content)).convert("RGBA")
 
-        # Detect white box in base image by thresholding brightness on grayscale
-        gray = base_img.convert("L")  # convert to grayscale
-        pix = gray.load()
-        width, height = base_img.size
+        # Convert base image to OpenCV format (numpy array, BGR)
+        base_img = cv2.imdecode(np.frombuffer(base_bytes.getbuffer(), np.uint8), cv2.IMREAD_COLOR)
 
-        # Find bounding box of largest white area (simple brightness threshold)
-        threshold = 240
-        white_pixels = []
-        for y in range(height):
-            for x in range(width):
-                if pix[x, y] >= threshold:
-                    white_pixels.append((x, y))
+        # Convert to grayscale
+        gray = cv2.cvtColor(base_img, cv2.COLOR_BGR2GRAY)
 
-        if not white_pixels:
+        # Threshold to isolate white areas strictly (use high threshold and max value)
+        _, thresh = cv2.threshold(gray, 250, 255, cv2.THRESH_BINARY)
+
+        # Find contours on thresholded image
+        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
             raise HTTPException(status_code=400, detail="No white box detected in base image")
 
-        xs, ys = zip(*white_pixels)
-        left, right = min(xs), max(xs)
-        top, bottom = min(ys), max(ys)
-        box_width = right - left + 1
-        box_height = bottom - top + 1
+        # Find largest contour by area (assuming this is white box)
+        largest_contour = max(contours, key=cv2.contourArea)
+        area = cv2.contourArea(largest_contour)
 
-        # Resize overlay image to fit detected white box
-        overlay_resized = overlay_img.resize((box_width, box_height), Image.LANCZOS)
+        # Optional: check minimal area size to avoid tiny noise
+        if area < 5000:
+            raise HTTPException(status_code=400, detail="White box detected is too small")
 
-        # Paste overlay image onto base image at detected position using alpha mask
-        base_img.paste(overlay_resized, (left, top), overlay_resized)
+        # Get bounding rect of the largest contour
+        x, y, w, h = cv2.boundingRect(largest_contour)
 
-        # Save output to temp file
+        # Resize overlay image to fit bounding box
+        overlay_resized = overlay_img_pil.resize((w, h), Image.LANCZOS)
+
+        # Paste resized overlay onto base image PIL (coordinates x,y)
+        base_img_pil.paste(overlay_resized, (x, y), overlay_resized)
+
+        # Save output to temp file with working Supabase logic
         output_ext = "png"
         output_filename = get_timestamped_filename("overlayed", output_ext)
         temp_output_path = os.path.join(TEMP_DIR, output_filename)
-        base_img.save(temp_output_path, format="PNG")
+        base_img_pil.save(temp_output_path, format="PNG")
 
         # Upload blended image to Supabase
         public_url = upload_to_supabase(temp_output_path, output_filename)
@@ -498,6 +503,5 @@ async def overlay_infographic(
         raise HTTPException(status_code=500, detail=str(e))
 
     finally:
-        # Cleanup temp file
         if temp_output_path and os.path.exists(temp_output_path):
             os.remove(temp_output_path)
