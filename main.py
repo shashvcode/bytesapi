@@ -434,8 +434,10 @@ async def overlay_logo_url(
             os.remove(temp_output_path)
 
 
-@app.post("/overlay_infographic")
-async def overlay_infographic(
+
+
+@app.post("/overlay_infographic2")
+async def overlay_infographic2(
     base_image_url: str = Form(...),
     overlay_image_url: str = Form(...)
 ):
@@ -445,53 +447,37 @@ async def overlay_infographic(
         base_resp = requests.get(base_image_url, timeout=10)
         if base_resp.status_code != 200:
             raise HTTPException(status_code=400, detail="Failed to fetch base image")
-        base_bytes = BytesIO(base_resp.content)
-        base_img_pil = Image.open(base_bytes).convert("RGBA")
+        base_img = Image.open(BytesIO(base_resp.content)).convert("RGBA")
 
         # Download overlay image
         overlay_resp = requests.get(overlay_image_url, timeout=10)
         if overlay_resp.status_code != 200:
             raise HTTPException(status_code=400, detail="Failed to fetch overlay image")
-        overlay_img_pil = Image.open(BytesIO(overlay_resp.content)).convert("RGBA")
+        overlay_img = Image.open(BytesIO(overlay_resp.content)).convert("RGBA")
 
-        # Convert base image to OpenCV format (numpy array, BGR)
-        base_img = cv2.imdecode(np.frombuffer(base_bytes.getbuffer(), np.uint8), cv2.IMREAD_COLOR)
+        # Calculate new size for overlay image scaled to 70% of base image size
+        base_width, base_height = base_img.size
+        new_width = int(base_width * 0.7)
+        aspect_ratio = overlay_img.width / overlay_img.height
+        new_height = int(new_width / aspect_ratio)
 
-        # Convert to grayscale
-        gray = cv2.cvtColor(base_img, cv2.COLOR_BGR2GRAY)
+        # Resize overlay image maintaining aspect ratio
+        overlay_resized = overlay_img.resize((new_width, new_height), Image.LANCZOS)
 
-        # Threshold to isolate white areas strictly (use high threshold and max value)
-        _, thresh = cv2.threshold(gray, 250, 255, cv2.THRESH_BINARY)
+        # Center the overlay on base image
+        pos_x = (base_width - new_width) // 2
+        pos_y = (base_height - new_height) // 2
 
-        # Find contours on thresholded image
-        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if not contours:
-            raise HTTPException(status_code=400, detail="No white box detected in base image")
+        # Paste resized overlay onto base image at centered position with transparency
+        base_img.paste(overlay_resized, (pos_x, pos_y), overlay_resized)
 
-        # Find largest contour by area (assuming this is white box)
-        largest_contour = max(contours, key=cv2.contourArea)
-        area = cv2.contourArea(largest_contour)
-
-        # Optional: check minimal area size to avoid tiny noise
-        if area < 5000:
-            raise HTTPException(status_code=400, detail="White box detected is too small")
-
-        # Get bounding rect of the largest contour
-        x, y, w, h = cv2.boundingRect(largest_contour)
-
-        # Resize overlay image to fit bounding box
-        overlay_resized = overlay_img_pil.resize((w, h), Image.LANCZOS)
-
-        # Paste resized overlay onto base image PIL (coordinates x,y)
-        base_img_pil.paste(overlay_resized, (x, y), overlay_resized)
-
-        # Save output to temp file with working Supabase logic
+        # Save output to temp file with your existing Supabase logic
         output_ext = "png"
         output_filename = get_timestamped_filename("overlayed", output_ext)
         temp_output_path = os.path.join(TEMP_DIR, output_filename)
-        base_img_pil.save(temp_output_path, format="PNG")
+        base_img.save(temp_output_path, format="PNG")
 
-        # Upload blended image to Supabase
+        # Upload image to Supabase
         public_url = upload_to_supabase(temp_output_path, output_filename)
 
         return JSONResponse({
