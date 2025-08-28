@@ -430,3 +430,74 @@ async def overlay_logo_url(
     finally:
         if temp_output_path and os.path.exists(temp_output_path):
             os.remove(temp_output_path)
+
+
+
+@app.post("/overlay_infographic")
+async def overlay_infographic(
+    base_image_url: str = Form(...),
+    overlay_image_url: str = Form(...)
+):
+    temp_base_path = temp_overlay_path = temp_output_path = None
+    try:
+        # Download base image
+        base_resp = requests.get(base_image_url, timeout=10)
+        if base_resp.status_code != 200:
+            raise HTTPException(status_code=400, detail="Failed to fetch base image")
+        base_img = Image.open(BytesIO(base_resp.content)).convert("RGBA")
+
+        # Download overlay image
+        overlay_resp = requests.get(overlay_image_url, timeout=10)
+        if overlay_resp.status_code != 200:
+            raise HTTPException(status_code=400, detail="Failed to fetch overlay image")
+        overlay_img = Image.open(BytesIO(overlay_resp.content)).convert("RGBA")
+
+        # Detect white box in base image by thresholding brightness on grayscale
+        gray = base_img.convert("L")  # convert to grayscale
+        pix = gray.load()
+        width, height = base_img.size
+
+        # Find bounding box of largest white area (simple brightness threshold)
+        threshold = 240
+        white_pixels = []
+        for y in range(height):
+            for x in range(width):
+                if pix[x, y] >= threshold:
+                    white_pixels.append((x, y))
+
+        if not white_pixels:
+            raise HTTPException(status_code=400, detail="No white box detected in base image")
+
+        xs, ys = zip(*white_pixels)
+        left, right = min(xs), max(xs)
+        top, bottom = min(ys), max(ys)
+        box_width = right - left + 1
+        box_height = bottom - top + 1
+
+        # Resize overlay image to fit detected white box
+        overlay_resized = overlay_img.resize((box_width, box_height), Image.LANCZOS)
+
+        # Paste overlay image onto base image at detected position using alpha mask
+        base_img.paste(overlay_resized, (left, top), overlay_resized)
+
+        # Save output to temp file
+        output_ext = "png"
+        output_filename = get_timestamped_filename("overlayed", output_ext)
+        temp_output_path = os.path.join(TEMP_DIR, output_filename)
+        base_img.save(temp_output_path, format="PNG")
+
+        # Upload blended image to Supabase
+        public_url = upload_to_supabase(temp_output_path, output_filename)
+
+        return JSONResponse({
+            "outputUrl": public_url,
+            "fileName": output_filename
+        })
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    finally:
+        # Cleanup temp file
+        if temp_output_path and os.path.exists(temp_output_path):
+            os.remove(temp_output_path)
