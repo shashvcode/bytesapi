@@ -381,6 +381,12 @@ async def overlay_logo_url(
             actual_logo_url = logo_image_url
             actual_corner = corner
         
+        if actual_corner == "none":
+            return JSONResponse({
+                "outputUrl": actual_base_url,
+                "fileName": os.path.basename(actual_base_url)
+            })
+        
         # Download base image
         resp = requests.get(actual_base_url, timeout=10)
         if resp.status_code != 200:
