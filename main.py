@@ -457,7 +457,7 @@ async def overlay_infographic2(
 
         # Calculate new size for overlay image scaled to 70% of base image size
         base_width, base_height = base_img.size
-        new_width = int(base_width * 0.7)
+        new_width = int(base_width * 0.6)
         aspect_ratio = overlay_img.width / overlay_img.height
         new_height = int(new_width / aspect_ratio)
 
